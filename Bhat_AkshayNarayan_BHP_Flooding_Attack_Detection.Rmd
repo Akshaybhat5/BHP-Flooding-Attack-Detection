@@ -1,0 +1,385 @@
+---
+title: BHP (Burst Header Packet) Flooding Attack Detection in Optimal Burst Switching
+  Networks
+author: "Akshay Bhat"
+date: "19/10/2022"
+output: 
+  html_document: 
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+# 1. Main Objective
+The primary purpose of the work is to build a lightweight ML model for detecting BHP flooding attacks in Optimal Burst Switching Networks.
+
+
+# 2. Libraries
+```{r}
+library(MASS)
+library(ggplot2)
+library(class)
+library(dplyr)
+library(randomForest)
+library(tidyr)
+library(rpart)
+library(caret)
+library(factoextra)
+```
+
+# 3. Data
+The datasets extracted in this session were sourced from UCI machine learning repository https://archive.ics.uci.edu/ml/datasets/Burst+Header+Packet+%28BHP%29+flooding+attack+on+Optical+Burst+Switching+%28OBS%29+Network
+
+Once the data has been saved in the local directory, it is used to carry out the investigation.
+```{r}
+data = read.csv("/Users/akshaybhat/Desktop/M.S /COURSES/5. DATA MINING/Capstone/FINAL DECIDED/OBS-Network-DataSet_2_Aug27.csv", header = F) # setting header false as the default dataset doesnt have a header
+```
+
+Column names are assigned based on the information provided on the UCI machine learning repository
+```{r}
+# naming each columns
+colnames(data) = c("Node","Utilized.bandwidth.rate","Packet.drop.rate","Reserved.bandwidth","Average.delay.time.per.sec","Percentage.of.lost.packet.rate","Percentage.of.lost.byte.rate","Packet.received.rate","Used.bandwidth","Lost.bandwidth","Packet.size.byte","Packet.transmitted","Packet.received","Packet.lost","Transmitted.byte","Received.byte","run.10.AVG.drop.rate","run.10.AVG.bandwidth.use","run.10.delay","Node.status","Flood.status","Class.label")
+```
+
+# 4. Data Exploration and Visualisation
+Let us begin with some fundamental knowledge of the variables, the arrangement of the data, and fundamental statistics about the data.
+```{r}
+str(data) # to check the structure of the data
+```
+```{r}
+summary(data) # to check data statistical summary
+```
+
+```{r}
+data %>% 
+  ggplot(aes(x = Class.label, y = nrow(data), colour =Class.label))+
+  geom_bar(stat = "identity")+labs(x = "class label",y = "") # plot to check the distribution of each class labels in OBS dataset.
+```
+```{r}
+table(data$Class.label) # The number of instances for each class in the OBS network dataset
+```
+Data distribution of all variables
+```{r}
+hist(data$Utilized.bandwidth.rate)
+```
+```{r}
+hist(data$Packet.drop.rate)
+```
+```{r}
+hist(data$Reserved.bandwidth)
+```
+```{r}
+hist(data$Average.delay.time.per.sec)
+```
+
+
+This variable is right skewed
+
+```{r}
+hist(data$Percentage.of.lost.packet.rate)
+```
+```{r}
+hist(data$Percentage.of.lost.byte.rate)
+```
+```{r}
+hist(data$Packet.received.rate)
+```
+```{r}
+hist(data$Used.bandwidth)
+```
+```{r}
+hist(data$Lost.bandwidth)
+```
+
+
+This variable is right skewed
+
+```{r}
+hist(data$Packet.transmitted)
+```
+```{r}
+hist(data$Packet.received)
+```
+```{r}
+hist(data$Transmitted.byte)
+```
+```{r}
+hist(data$Received.byte)
+```
+
+
+Right skewed
+```{r}
+hist(data$run.10.AVG.drop.rate)
+```
+
+```{r}
+hist(data$run.10.delay)
+```
+
+
+Right skewed
+
+```{r}
+hist(data$Flood.status)
+```
+
+
+Right skewed
+
+# 5. Data Cleaning and Pre-processing
+The attribute Packet size byte has been dropped because of its constant value of 1440 throughout all the accumulated samples in a dataset.
+```{r}
+data = data[,-11] # removing packet size byte
+
+sum(is.na(data)) #To check any missing values in a dataset
+```
+Now, the data is ready to carry out the further investigation.
+
+# 6. Data Splitting
+The data has been divided into training and testing sets, with 80% for the training and 20% for the testing set. The 20% testing data is held back and not exposed to the machine learning model until it is time to test the model.
+```{r}
+# using seed to get the same samples for the reproducibility
+set.seed(123)
+sample_split = sample.int(n = nrow(data), size = floor(.80*nrow(data)), replace = F) # data splitting into 80% and 20% 
+training_set = data[sample_split,] # training data with 80% samples
+validation_set = data[-sample_split,] # test data with 20% samples
+
+```
+
+# 7. Model fitting
+All the features are selected based on the forward feature selection method.
+
+## LDA (Linear Discriminant Analysis)
+Linear Discriminant Analysis (LDA) is one of the commonly used dimensionality reduction techniques in machine learning to solve more than two-class classification problems. It is also known as Normal Discriminant Analysis (NDA) or Discriminant Function Analysis (DFA).
+```{r}
+set.seed(1)
+tcontrol <- trainControl(method = "cv", number = 10) # 10-fold cross validation
+lda_model = train(Class.label~Utilized.bandwidth.rate+
+                  Packet.drop.rate+
+                  Reserved.bandwidth+
+                  Average.delay.time.per.sec+
+                  Percentage.of.lost.packet.rate + 
+                  Percentage.of.lost.byte.rate+
+                  Used.bandwidth+
+                  Packet.transmitted+
+                  Packet.received+
+                  run.10.AVG.drop.rate+ 
+                  run.10.AVG.bandwidth.use+ 
+                  log(run.10.delay)+# log transformation is used to normalize the variable as it is right skewed
+                  Node +
+                  Flood.status, 
+                data = training_set,
+                method = "lda",
+                trControl = tcontrol) # LDA model fitting using lda function on the training data (80% samples)
+lda_pred = predict(lda_model, validation_set) # LDA model prediction on the test data (20% samples)
+table(lda_pred, validation_set$Class.label) # confusion matrix
+```
+The LDA Model accuracy score
+```{r}
+mean(lda_pred == validation_set$Class.label) # LDA Model accuracy score on the test data
+```
+The LDA Model test error rate
+```{r}
+mean(lda_pred != validation_set$Class.label) # LDA model test error rate
+```
+## QDA (Quadratic Discriminant Analysis)
+Quadratic Discriminant Analysis (QDA) is a classification algorithm and it is used in machine learning and statistics problems. QDA is an extension of Linear Discriminant Analysis (LDA). Unlike LDA, QDA considers each class has its own variance or covariance matrix rather than to have a common one.
+
+```{r}
+set.seed(1)
+qda_model = train(Class.label~Utilized.bandwidth.rate+
+                  Packet.drop.rate+
+                  Reserved.bandwidth+
+                  sqrt(Average.delay.time.per.sec)+#sqrt transformation
+                  Percentage.of.lost.packet.rate + 
+                  Percentage.of.lost.byte.rate+
+                  Used.bandwidth+
+                  Packet.transmitted+
+                  Packet.received+
+                  run.10.AVG.drop.rate+ 
+                  run.10.AVG.bandwidth.use+ 
+                  sqrt(run.10.delay)+ # sqrt transformation is used to normalize the variable as it is right skewed 
+                  Node, 
+                data = training_set,
+                method = "qda",
+                trControl = tcontrol) # QDA model fitting using lda function on the training data (80% samples)
+qda_pred = predict(qda_model, validation_set) # QDA model prediction on the test data (20% samples)
+table(qda_pred, validation_set$Class.label) # confusion matrix
+```
+The QDA Model accuracy score
+```{r}
+mean(qda_pred == validation_set$Class.label)# QDA Model accuracy score on the test data
+```
+
+The QDA Model test error rate
+```{r}
+mean(qda_pred != validation_set$Class.label) # QDA model test error rate
+```
+## K Nearest Neighbor(KNN)
+KNN which stand for K Nearest Neighbor is a Supervised Machine Learning algorithm that classifies a new data point into the target class, depending on the features of its neighboring data points.The knn () function needs to be used to train a model for which we need to install a package 'class'. The knn() function identifies the k-nearest neighbors using Euclidean distance where k is a user-specified number.
+```{r}
+best_selected_features = data %>% 
+  select(Node, Utilized.bandwidth.rate, Packet.drop.rate, Reserved.bandwidth, Average.delay.time.per.sec,
+         Percentage.of.lost.packet.rate, Percentage.of.lost.byte.rate, Used.bandwidth, Packet.transmitted,
+         Packet.received, run.10.AVG.drop.rate, run.10.AVG.bandwidth.use, run.10.delay, Flood.status) # selecting the best features which can give the better results for the model performance
+
+fviz_nbclust(best_selected_features, kmeans, method = "wss") # elbow method plotting for the selected features
+```
+
+
+This shows an “elbow” or bends at k = 3 neighbours. The total within the sum of squares begins to level off at this point. This tells us that the optimal number of neighbors to use in the KNN algorithm is 3.
+```{r}
+
+set.seed(5)
+knn_training = cbind(training_set$Node,# creating a matrix for knn_training data
+           training_set$Utilized.bandwidth.rate,
+           training_set$Packet.drop.rate,
+           training_set$Reserved.bandwidth,
+           sqrt(training_set$Average.delay.time.per.sec),#sqrt transformation
+           training_set$Percentage.of.lost.packet.rate,
+           training_set$Percentage.of.lost.byte.rate,
+           training_set$Used.bandwidth,
+           training_set$Packet.transmitted,
+           training_set$Packet.received,
+           training_set$run.10.AVG.drop.rate,
+           training_set$run.10.AVG.bandwidth.use,
+           log(training_set$run.10.delay),#log transformation
+           sqrt(training_set$Flood.status)) #sqrt transformation
+
+knn_testing = cbind(validation_set$Node, # creating a matrix for knn_testing data
+           validation_set$Utilized.bandwidth.rate,
+           validation_set$Packet.drop.rate,
+           validation_set$Reserved.bandwidth,
+           sqrt(validation_set$Average.delay.time.per.sec),#sqrt transformation
+           validation_set$Percentage.of.lost.packet.rate,
+           validation_set$Percentage.of.lost.byte.rate,
+           validation_set$Used.bandwidth,
+           validation_set$Packet.transmitted,
+           validation_set$Packet.received,
+           validation_set$run.10.AVG.drop.rate,
+           validation_set$run.10.AVG.bandwidth.use,
+           log(validation_set$run.10.delay), # log transformation
+           sqrt(validation_set$Flood.status)) #sqrt transformation
+classes = training_set$Class.label # Class label as the target variable
+
+
+#k = 3
+knn_model = knn(knn_training, knn_testing, classes, k = 3) # knn model fitting using knn function with 3 neighbor classifier
+table(knn_model, validation_set$Class.label) # confusion matrix
+```
+
+The KNN Model accuracy score
+```{r}
+mean(knn_model == validation_set$Class.label)# KNN Model accuracy score on the test data
+```
+The KNN Model test error rate
+```{r}
+mean(knn_model != validation_set$Class.label)# KNN model test error rate
+```
+
+## Tree Classification
+The main goal behind classification tree is to classify or predict an outcome based on a set of predictors.A Classification tree labels, records, and assigns variables to discrete classes. A Classification tree can also provide a measure of confidence that the classification is correct. A Classification tree is built through a process known as binary recursive partitioning.
+```{r}
+set.seed(6)
+modfit.rpart <- rpart(Class.label~ Node + 
+                        Utilized.bandwidth.rate+
+                        Packet.drop.rate+
+                        Reserved.bandwidth+
+                        Average.delay.time.per.sec+
+                        Percentage.of.lost.packet.rate + 
+                        Percentage.of.lost.byte.rate+
+                        Used.bandwidth+
+                        Packet.transmitted+
+                        Packet.received+
+                        run.10.AVG.drop.rate+ 
+                        run.10.AVG.bandwidth.use + 
+                        log(run.10.delay)+ #log transformation
+                        Flood.status, 
+                      data = training_set, method="class", xval = 10)
+
+tree_model <- predict(modfit.rpart, validation_set, type = "class") # Decision Tree model prediction on test set
+table(tree_model, validation_set$Class.label) # confusion matrix
+```
+The Decision Tree Model accuracy score
+```{r}
+mean(tree_model == validation_set$Class.label)# Decision Tree Model accuracy score on the test data
+```
+The Decision Tree Model test error rate
+```{r}
+mean(tree_model != validation_set$Class.label)# Decision Tree model test error rate
+```
+```{r}
+plot(modfit.rpart) # Classification Tree plot
+text(modfit.rpart, cex = 0.4)
+```
+
+
+
+## RandomForest
+Random Forest is an ensemble of decision trees. It builds and combines multiple decision trees to get more accurate predictions. It's a non-linear classification algorithm. Each decision tree model is used when employed on its own.Random forest adds additional randomness to the model, while growing the trees. Instead of searching for the most important feature while splitting a node, it searches for the best feature among a random subset of features. This results in a wide diversity that generally results in a better model.
+```{r}
+set.seed(10)
+training_set$Class.label = factor(training_set$Class.label) # converting into a factor for Randomforest Classification
+modfit.rf <- randomForest(Class.label ~ 
+                            Utilized.bandwidth.rate+
+                            Packet.drop.rate+
+                            Reserved.bandwidth+
+                            Average.delay.time.per.sec+
+                            Percentage.of.lost.packet.rate + 
+                            Percentage.of.lost.byte.rate+
+                            Used.bandwidth+
+                            Packet.transmitted+
+                            Packet.received+
+                            run.10.AVG.drop.rate+ 
+                            run.10.AVG.bandwidth.use + 
+                            run.10.delay+
+                            Node +
+                            Flood.status+
+                            Received.byte+
+                            Lost.bandwidth,
+                          data = training_set,
+                          importance = T) # Random Forest model fitting with feature importance
+varImpPlot(modfit.rf) # feature importance plot
+
+```
+Based on the feature importance plot two features namely, Flood status and run 10 delay were chosen to fit the lightweight Random Forest Model.
+
+```{r}
+modfit.rf <- train(Class.label ~ run.10.delay+ Flood.status,
+                          data = training_set,
+                          importance = T,
+                   method = "rf",
+                   trControl = tcontrol) # Random Forest Model with two features
+random_forest_model <- predict(modfit.rf, validation_set) # model prediction on test set
+table(random_forest_model, validation_set$Class.label) # confusion matrix
+```
+
+The Random Forest Model accuracy score
+```{r}
+mean(random_forest_model == validation_set$Class.label)
+```
+# 8. Summary
+```{r}
+comparision_table = data.frame(Approch = c("LDA", "QDA", "KNN", "Decision Tree", "RandomForest"),
+              No.of.features = c(14, 13, 14, 14, 2),
+           Test.error.rate = c("25.11 %","31.16 %","4.18 %","8.37 %","0 %"),
+           Acc.score = c("74.88 %","68.83 %","95.81 %","91.62 %","100 %"))
+comparision_table
+```
+
+##### Table displays the different ML approaches and their comparisons via the number of features, accuracy, and test error rate. 
+##### It is clear from Table "RandomForest Model" has topped with an accuracy score of 100% with only two features directly connecting to the primary objective of devising a lightweight ML model to detect or classify the class labels in OBS networks. We can infer that decreasing the features to two and using the 10-fold cross validation and hold-out technique helped the suggested method to facilitate the overfitting problem and classify the OBS flooding attacks.
+
+
+
+
+
+
+
+
+
